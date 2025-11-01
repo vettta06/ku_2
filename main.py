@@ -1,11 +1,13 @@
 import argparse
 import os
 import sys
+import tempfile
 import urllib.request
 import gzip
 import tarfile
 import io
 from collections import deque
+import subprocess
 
 
 def validate_args(args):
@@ -219,6 +221,51 @@ def topological_sort(graph):
     return order, has_cycle
 
 
+def generate_graphviz(graph, root_package, max_depth):
+    dot_lines= []
+    dot_lines.append("digraph DependencyGraph {")
+    dot_lines.append("    rankdir=TB;")
+    dot_lines.append("    node [shape=box, style=filled, fillcolor=lightblue];")
+    dot_lines.append("    edge [color=darkgreen];")
+
+    dot_lines.append(f'    "{root_package}" [fillcolor=orange, fontsize=14, fontname="Arial Bold"];')
+    visited_edges = set()
+    for package in graph:
+        if package == root_package:
+            continue
+        dot_lines.append(f'    "{package}";')
+        for dep in graph[package]:
+            edge = f'"{package}" -> "{dep}"'
+            if edge not in visited_edges:
+                dot_lines.append(f"    {edge};")
+                visited_edges.add(edge)
+    dot_lines.append("}")
+    return "\n".join(dot_lines)
+
+
+def save_graphviz(dot_content, output):
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.dot', delete=False) as dot_file:
+            dot_file.write(dot_content)
+            dot_filename = dot_file.name
+        svg_filename = output
+        subprocess.run([
+            'dot', '-Tsvg', dot_filename, '-o', svg_filename
+        ], check=True, capture_output=True)
+        os.unlink(dot_filename)
+        print(f"Graph visualization saved to: {svg_filename}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating SVG: {e}")
+        return False
+    except FileNotFoundError:
+        print("Error: Graphviz 'dot' command not found.")
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Dependency graph visualizer")
 
@@ -251,7 +298,7 @@ def main():
     print(f"depth: {args.depth}")
 
     print("\nStage 2: Getting direct dependencies")
-    print(f"\nStage 3: Building dependency graph (max depth: {args.depth}) ===")
+    print(f"\nStage 3: Building dependency graph (max depth: {args.depth})")
     packages_data = {}
 
     if args.mode == "online":
@@ -282,7 +329,7 @@ def main():
     else:
         print("\nNo cycles detected")
 
-    print(f"\nStage 4: Load order for {args.package} ===")
+    print(f"\nStage 4: Load order for {args.package}")
     load_order, has_cycle = topological_sort(dependency_graph)
     if has_cycle:
         print("Graph contains cycles, load order may be incomplete")
@@ -292,6 +339,22 @@ def main():
         print("Load order: ")
         for i, package in enumerate(load_order, 1):
             print(f"{i}. {package}")
+
+    print(f"\nStage 5: Graph visualization")
+    dot_content = generate_graphviz(dependency_graph, args.package, args.depth)
+    print("Graphviz DOT representation:")
+    print("=" * 50)
+    print(dot_content)
+    print("=" * 50)
+    if save_graphviz(dot_content, args.output):
+        print(f"Successfully generated visualization: {args.output}")
+    else:
+        print("Failed to generate visualization")
+        dot_filename = os.path.splitext(args.output)[0] + ".dot"
+        with open(dot_filename, 'w') as f:
+            f.write(dot_content)
+        print(f"DOT file saved as: {dot_filename}")
+
 
 if __name__ == "__main__":
     main()
