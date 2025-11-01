@@ -5,6 +5,7 @@ import urllib.request
 import gzip
 import tarfile
 import io
+from collections import deque
 
 
 def validate_args(args):
@@ -99,9 +100,98 @@ def get_package_dependencies(package_name, version, packages_data):
     package_info = packages_data[package_name]
 
     if version != "latest" and package_info["version"] != version:
-        print(f"Warning: Version {version} not found, using {package_info['version']}")
+        print(f"Version {version} not found, using {package_info['version']}")
 
     return package_info["dependencies"]
+
+
+def build_dependency_graph(package_name, version, packages_data, max_depth):
+    graph = {}
+    visited = set()
+    queue = deque()
+    queue.append((package_name, version, 0))
+    visited.add(package_name)
+    while queue:
+        cur_pkg, cur_ver, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        dependencies = get_package_dependencies(cur_pkg, cur_ver, packages_data)
+        if dependencies is None:
+            continue
+        graph[cur_pkg] = dependencies
+        for dep in dependencies:
+            if dep not in visited and dep in packages_data:
+                visited.add(dep)
+                queue.append((dep, packages_data[dep]['version'], depth + 1))
+            elif dep not in packages_data:
+                graph.setdefault(cur_pkg, []).append(dep)
+    return graph
+
+
+def parse_file_test(file_path):
+    packages = {}
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ':' in line:
+                    pkg_name, deps = line.split(':', 1)
+                    pkg_name = pkg_name.strip()
+                    dependencies = [d.strip() for d in deps.split() if d.strip()]
+                    packages[pkg_name] = {
+                        'version': '1.0',
+                        'dependencies': dependencies,
+                        'description': f'Test package {pkg_name}'
+                    }
+    except Exception as e:
+        print(f"Error reading test file {e}")
+    return packages
+
+
+def detect_cycles(graph):
+    def dfs(node, path):
+        if node in path:
+            start = path.index(node)
+            return path[start:] + [node]
+        if node in visited:
+            return None
+        visited.add(node)
+        path.append(node)
+        for neigh in graph.get(node, []):
+            cycle_dfs = dfs(neigh, path.copy())
+            if cycle_dfs:
+                return cycle_dfs
+        return None
+
+    visited = set()
+    for node in graph:
+        if node not in visited:
+            cycle = dfs(node, [])
+            if cycle:
+                return cycle
+    return None
+
+
+def print_dependency_graph(graph, root_package):
+    print(f"\nDependency graph for {root_package}:")
+
+    def print_deps(node, depth, visited):
+        if node in visited:
+            indent = "  " * depth
+            print(f"{indent}{node} [CYCLE]")
+            return
+
+        visited.add(node)
+        indent = "  " * depth
+        print(f"{indent}{node}")
+
+        if node in graph:
+            for child in graph[node]:
+                print_deps(child, depth + 1, visited.copy())
+
+    print_deps(root_package, 0, set())
 
 
 def main():
@@ -136,35 +226,36 @@ def main():
     print(f"depth: {args.depth}")
 
     print("\nStage 2: Getting direct dependencies")
-
+    print(f"\nStage 3: Building dependency graph (max depth: {args.depth}) ===")
     packages_data = {}
 
     if args.mode == "online":
         packages_data = download_apkindex(args.repo)
     else:
-        print("Test mode - using sample data")
-        packages_data = {
-            "nginx": {
-                "version": "1.20.1",
-                "dependencies": ["pcre", "zlib", "openssl"],
-                "description": "NGINX web server",
-            },
-            "pcre": {
-                "version": "8.45",
-                "dependencies": ["libc", "libstdc++"],
-                "description": "Perl Compatible Regular Expressions",
-            },
-        }
-
+        packages_data = parse_file_test(args.repo)
+        if not  packages_data:
+            print("Using fallback test data")
+            packages_data = {
+                "A": {"version": "1.0", "dependencies": ["B", "C"], "description": "Package A"},
+                "B": {"version": "2.0", "dependencies": ["D"], "description": "Package B"},
+                "C": {"version": "3.0", "dependencies": ["D", "E"], "description": "Package C"},
+                "D": {"version": "4.0", "dependencies": [], "description": "Package D"},
+                "E": {"version": "5.0", "dependencies": ["A"], "description": "Package E"}
+            }
+    dependency_graph = build_dependency_graph(args.package, args.version, packages_data, args.depth)
+    print(f"\nDependencies for {args.package}:")
     dependencies = get_package_dependencies(args.package, args.version, packages_data)
-
-    if dependencies is None:
-        print(f"Package {args.package} not found in repository")
-        sys.exit(1)
-
-    print(f"Direct dependencies for {args.package}:")
-    for dep in dependencies:
-        print(f"  - {dep}")
+    if dependencies:
+        for dep in dependencies:
+            print(f"   - {dep}")
+    else:
+        print("  No dependencies")
+    print_dependency_graph(dependency_graph, args.package)
+    cycle = detect_cycles(dependency_graph)
+    if cycle:
+        print(f"\nCycle detected: {' -> '.join(cycle)}")
+    else:
+        print("\nNo cycles detected")
 
 
 if __name__ == "__main__":
