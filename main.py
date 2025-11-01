@@ -194,6 +194,31 @@ def print_dependency_graph(graph, root_package):
     print_deps(root_package, 0, set())
 
 
+def topological_sort(graph):
+    if not graph:
+        return [], False
+    inv_graph = {node: [] for node in graph}
+    for package in graph:
+        for dep in graph[package]:
+            if dep in graph:
+                inv_graph[dep].append(package)
+    in_degree = {node: 0 for node in graph}
+    for node in graph:
+        for dep in inv_graph[node]:
+            in_degree[dep] += 1
+    queue = deque([node for node in graph if in_degree[node] == 0])
+    order = []
+    while queue:
+        node = queue.popleft()
+        order.append(node)
+        for dep in inv_graph[node]:
+            in_degree[dep] -= 1
+            if in_degree[dep] == 0:
+                queue.append(dep)
+    has_cycle = len(order) != len(graph)
+    return order, has_cycle
+
+
 def main():
     parser = argparse.ArgumentParser(description="Dependency graph visualizer")
 
@@ -257,6 +282,16 @@ def main():
     else:
         print("\nNo cycles detected")
 
+    print(f"\nStage 4: Load order for {args.package} ===")
+    load_order, has_cycle = topological_sort(dependency_graph)
+    if has_cycle:
+        print("Graph contains cycles, load order may be incomplete")
+    if not load_order:
+        print("No valid load order can be determined due to cycles")
+    else:
+        print("Load order: ")
+        for i, package in enumerate(load_order, 1):
+            print(f"{i}. {package}")
 
 if __name__ == "__main__":
     main()
