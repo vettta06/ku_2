@@ -220,49 +220,7 @@ def topological_sort(graph):
     return order, has_cycle
 
 
-def generate_graphviz(graph, root_package, max_depth):
-    dot_lines= []
-    dot_lines.append("digraph DependencyGraph {")
-    dot_lines.append("    rankdir=TB;")
-    dot_lines.append("    node [shape=box, style=filled, fillcolor=lightblue];")
-    dot_lines.append("    edge [color=darkgreen];")
 
-    dot_lines.append(f'    "{root_package}" [fillcolor=orange, fontsize=14, fontname="Arial Bold"];')
-    visited_edges = set()
-    for package in graph:
-        #if package == root_package:
-            #continue
-        dot_lines.append(f'    "{package}";')
-        for dep in graph[package]:
-            edge = f'"{package}" -> "{dep}"'
-            if edge not in visited_edges:
-                dot_lines.append(f"    {edge};")
-                visited_edges.add(edge)
-    dot_lines.append("}")
-    return "\n".join(dot_lines)
-
-
-def save_graphviz(dot_content, output):
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.dot', delete=False) as dot_file:
-            dot_file.write(dot_content)
-            dot_filename = dot_file.name
-        svg_filename = output
-        subprocess.run([
-            'dot', '-Tsvg', dot_filename, '-o', svg_filename
-        ], check=True, capture_output=True)
-        os.unlink(dot_filename)
-        print(f"Graph visualization saved to: {svg_filename}")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error generating SVG: {e}")
-        return False
-    except FileNotFoundError:
-        print("Error: Graphviz 'dot' command not found.")
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return False
 
 
 def main():
@@ -304,7 +262,7 @@ def main():
         packages_data = download_apkindex(args.repo)
     else:
         packages_data = parse_file_test(args.repo)
-        if not  packages_data:
+        if not packages_data:
             print("Using fallback test data")
             packages_data = {
                 "A": {"version": "1.0", "dependencies": ["B", "C"], "description": "Package A"},
