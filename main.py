@@ -3,7 +3,6 @@ import os
 import sys
 import tempfile
 import urllib.request
-import gzip
 import tarfile
 import io
 from collections import deque
@@ -231,8 +230,8 @@ def generate_graphviz(graph, root_package, max_depth):
     dot_lines.append(f'    "{root_package}" [fillcolor=orange, fontsize=14, fontname="Arial Bold"];')
     visited_edges = set()
     for package in graph:
-        if package == root_package:
-            continue
+        #if package == root_package:
+            #continue
         dot_lines.append(f'    "{package}";')
         for dep in graph[package]:
             edge = f'"{package}" -> "{dep}"'
